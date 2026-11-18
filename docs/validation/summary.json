@@ -1,0 +1,19 @@
+{
+  "project": "CourseSniffer",
+  "version": "1.0.0",
+  "validation_time_utc": "2026-11-18T03:53:12.679951+00:00",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "compiler": "GCC 14.2.0",
+  "qt": "6.8.2",
+  "libpcap": "1.10.5",
+  "core_tests_passed": 75,
+  "core_tests_failed": 0,
+  "gui_function_tests_passed": 4,
+  "gui_live_tests_pending": 2,
+  "ctest_groups_passed": 3,
+  "asan": "passed (detect_leaks=0)",
+  "ubsan": "passed",
+  "live_capture": "pending on target macOS; current workspace lacks packet capture permission",
+  "loopback_http_udp": "passed IPv4 and IPv6",
+  "target_platform": "macOS arm64"
+}
