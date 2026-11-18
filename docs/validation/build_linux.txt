@@ -1,2 +1,29 @@
 [0/2] Re-checking globbed directories...
-[1/4] Automatic MOC for target CourseSniffer
+[1/29] Building CXX object CMakeFiles/sniffer_core.dir/src/core/HttpParser.cpp.o
+[2/29] Building CXX object CMakeFiles/sniffer_core.dir/src/core/PacketRecord.cpp.o
+[3/29] Building CXX object CMakeFiles/sniffer_core.dir/src/core/FilterParser.cpp.o
+[4/29] Building CXX object CMakeFiles/sniffer_core_tests.dir/tests/core_main.cpp.o
+[5/29] Building CXX object CMakeFiles/sniffer_core.dir/src/core/PacketParser.cpp.o
+[6/29] Building CXX object CMakeFiles/sniffer_core_tests.dir/tests/test_filter.cpp.o
+[7/29] Building CXX object CMakeFiles/sniffer_core.dir/src/core/TcpTracker.cpp.o
+[8/29] Linking CXX static library libsniffer_core.a
+[9/29] Automatic MOC for target sniffer_desktop
+[10/29] Building CXX object CMakeFiles/sniffer_core_tests.dir/tests/test_http.cpp.o
+[11/29] Building CXX object CMakeFiles/sniffer_core_tests.dir/tests/test_parser.cpp.o
+[12/29] Building CXX object CMakeFiles/sniffer_core_tests.dir/tests/test_tcp.cpp.o
+[13/29] Building CXX object CMakeFiles/sniffer_desktop.dir/src/capture/CaptureWorker.cpp.o
+[14/29] Building CXX object CMakeFiles/sniffer_desktop.dir/sniffer_desktop_autogen/mocs_compilation.cpp.o
+[15/29] Building CXX object CMakeFiles/sniffer_desktop.dir/src/ui/DemoPackets.cpp.o
+[16/29] Linking CXX executable sniffer_core_tests
+[17/29] Building CXX object CMakeFiles/sniffer_desktop.dir/src/ui/PacketTableModel.cpp.o
+[18/29] Building CXX object CMakeFiles/sniffer_desktop.dir/src/ui/StreamDialog.cpp.o
+[19/29] Building CXX object CMakeFiles/sniffer_desktop.dir/src/ui/MainWindow.cpp.o
+[20/29] Linking CXX static library libsniffer_desktop.a
+[21/29] Automatic MOC for target CourseSniffer
+[22/29] Building CXX object CMakeFiles/CourseSniffer.dir/CourseSniffer_autogen/mocs_compilation.cpp.o
+[23/29] Automatic MOC for target sniffer_gui_tests
+[24/29] Building CXX object CMakeFiles/sniffer_gui_tests.dir/sniffer_gui_tests_autogen/mocs_compilation.cpp.o
+[25/29] Building CXX object CMakeFiles/CourseSniffer.dir/src/main.cpp.o
+[26/29] Linking CXX executable CourseSniffer
+[27/29] Building CXX object CMakeFiles/sniffer_gui_tests.dir/tests/test_gui.cpp.o
+[28/29] Linking CXX executable sniffer_gui_tests
