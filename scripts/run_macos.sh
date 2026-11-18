@@ -6,7 +6,7 @@ if [[ ! -x "$APP_PATH" ]]; then
     echo "请执行 bash scripts/build_macos.sh 构建应用。"
     exit 1
 fi
-if [[ "${1:-}" == "--demo" ]]; then
+if [[ "${1:-}" == "--demo" || "${1:-}" == "--demo-pcap" || "${1:-}" == "--help" ]]; then
     exec "$APP_PATH" "$@"
 fi
 exec sudo "$APP_PATH" "$@"
