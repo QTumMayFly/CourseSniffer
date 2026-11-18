@@ -3,7 +3,6 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QProcess>
-#include <QSignalSpy>
 #include <QTableView>
 #include "capture/CaptureWorker.h"
 #include "ui/MainWindow.h"
@@ -17,6 +16,42 @@
 #endif
 
 using namespace sniffer;
+
+namespace {
+struct CaptureObservation {
+    int started = 0;
+    int stopped = 0;
+    QStringList errors;
+    QObject receiver;
+};
+
+void observeCapture(CaptureWorker* worker, CaptureObservation& observation) {
+    // 观察对象属于测试线程，计数和错误列表仅由该线程访问。
+    QObject::connect(worker, &CaptureWorker::captureStarted, &observation.receiver,
+        [&observation](const QString&, int) { ++observation.started; }, Qt::QueuedConnection);
+    QObject::connect(worker, &CaptureWorker::captureStopped, &observation.receiver,
+        [&observation](const CaptureSummary&) { ++observation.stopped; }, Qt::QueuedConnection);
+    QObject::connect(worker, &CaptureWorker::captureError, &observation.receiver,
+        [&observation](const QString& error) { observation.errors.push_back(error); }, Qt::QueuedConnection);
+}
+
+bool stopCaptureThread(CaptureWorker* worker, std::unique_ptr<QThread>& thread) {
+    QMetaObject::invokeMethod(worker, [worker]() {
+        worker->stopCapture();
+        QThread::currentThread()->quit();
+    }, Qt::QueuedConnection);
+    QElapsedTimer timer;
+    timer.start();
+    while (!thread->wait(0) && timer.elapsed() < 3000) QTest::qWait(5);
+    if (!thread->wait(0)) {
+        // 保留仍运行的线程对象，外部测试时限负责终止这个失败进程。
+        thread.release();
+        QTest::qFail("抓包工作线程未在三秒内退出，等待外部测试时限终止进程。", __FILE__, __LINE__);
+        for (;;) QTest::qWait(100);
+    }
+    return true;
+}
+}
 
 class GuiTests : public QObject {
     Q_OBJECT
@@ -97,27 +132,26 @@ private slots:
     void unavailableInterfaceCompletesStop() {
         qRegisterMetaType<CaptureSummary>();
         auto queue = std::make_shared<CaptureQueue>();
-        QThread thread;
+        auto thread = std::make_unique<QThread>();
         auto* worker = new CaptureWorker(queue);
-        worker->moveToThread(&thread);
-        connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
-        QSignalSpy stopped(worker, &CaptureWorker::captureStopped);
-        QSignalSpy failed(worker, &CaptureWorker::captureError);
-        thread.start();
+        worker->moveToThread(thread.get());
+        connect(thread.get(), &QThread::finished, worker, &QObject::deleteLater);
+        CaptureObservation observation;
+        observeCapture(worker, observation);
+        thread->start();
         const bool invoked = QMetaObject::invokeMethod(worker, "startCapture", Qt::QueuedConnection,
                                          Q_ARG(QString, QStringLiteral("coursesniffer_missing_interface")));
         QElapsedTimer waitTimer;
         waitTimer.start();
-        while (stopped.isEmpty() && waitTimer.elapsed() < 3000) QTest::qWait(5);
-        const bool completed = stopped.count() == 1;
-        const int errors = failed.count();
-        QMetaObject::invokeMethod(worker, "stopCapture", Qt::BlockingQueuedConnection);
-        thread.quit();
-        QVERIFY(thread.wait(3000));
+        while (observation.stopped == 0 && waitTimer.elapsed() < 3000) QTest::qWait(5);
+        const bool completed = observation.stopped == 1;
+        const int errors = observation.errors.size();
+        const bool threadFinished = stopCaptureThread(worker, thread);
+        QVERIFY(threadFinished);
         QVERIFY(invoked);
         QVERIFY(completed);
         QCOMPARE(errors, 1);
-        QCOMPARE(stopped.count(), 1);
+        QCOMPARE(observation.stopped, 1);
         QVERIFY(queue->empty());
     }
 
@@ -132,38 +166,35 @@ private slots:
         QVERIFY2(!loopback.isEmpty(), qPrintable(enumerationError.isEmpty() ? QStringLiteral("回环接口不可用") : enumerationError));
         qRegisterMetaType<CaptureSummary>();
         auto queue = std::make_shared<CaptureQueue>();
-        QThread thread;
+        auto thread = std::make_unique<QThread>();
         auto* worker = new CaptureWorker(queue);
-        worker->moveToThread(&thread);
-        connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
-        QSignalSpy started(worker, &CaptureWorker::captureStarted);
-        QSignalSpy stopped(worker, &CaptureWorker::captureStopped);
-        QSignalSpy failed(worker, &CaptureWorker::captureError);
+        worker->moveToThread(thread.get());
+        connect(thread.get(), &QThread::finished, worker, &QObject::deleteLater);
+        CaptureObservation observation;
+        observeCapture(worker, observation);
         QString failure;
-        thread.start();
+        thread->start();
         for (int attempt = 0; attempt < 10; ++attempt) {
             queue->clear();
             QMetaObject::invokeMethod(worker, "startCapture", Qt::QueuedConnection, Q_ARG(QString, loopback));
             QElapsedTimer timer;
             timer.start();
-            while (started.count() <= attempt && failed.isEmpty() && timer.elapsed() < 3000) QTest::qWait(5);
-            if (!failed.isEmpty()) { failure = failed.first().first().toString(); break; }
-            if (started.count() != attempt + 1) { failure = QStringLiteral("启动接口超时"); break; }
+            while (observation.started <= attempt && observation.errors.isEmpty() && timer.elapsed() < 3000) QTest::qWait(5);
+            if (!observation.errors.isEmpty()) { failure = observation.errors.first(); break; }
+            if (observation.started != attempt + 1) { failure = QStringLiteral("启动接口超时"); break; }
             timer.restart();
             QMetaObject::invokeMethod(worker, "stopCapture", Qt::QueuedConnection);
-            while (stopped.count() <= attempt && timer.elapsed() < 1000) QTest::qWait(5);
-            if (stopped.count() != attempt + 1 || timer.elapsed() >= 1000) {
+            while (observation.stopped <= attempt && timer.elapsed() < 1000) QTest::qWait(5);
+            if (observation.stopped != attempt + 1 || timer.elapsed() >= 1000) {
                 failure = QStringLiteral("空闲接口停止超过一秒");
                 break;
             }
         }
-        QMetaObject::invokeMethod(worker, "stopCapture", Qt::BlockingQueuedConnection);
-        thread.quit();
-        const bool threadFinished = thread.wait(3000);
+        const bool threadFinished = stopCaptureThread(worker, thread);
         QVERIFY(threadFinished);
         QVERIFY2(failure.isEmpty(), qPrintable(failure));
-        QCOMPARE(started.count(), 10);
-        QCOMPARE(stopped.count(), 10);
+        QCOMPARE(observation.started, 10);
+        QCOMPARE(observation.stopped, 10);
     }
 
     void liveLoopbackTraffic() {
@@ -176,13 +207,12 @@ private slots:
         QVERIFY2(!loopback.isEmpty(), "回环接口不可用");
         qRegisterMetaType<CaptureSummary>();
         auto queue = std::make_shared<CaptureQueue>();
-        QThread thread;
+        auto thread = std::make_unique<QThread>();
         auto* worker = new CaptureWorker(queue);
-        worker->moveToThread(&thread);
-        connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
-        QSignalSpy started(worker, &CaptureWorker::captureStarted);
-        QSignalSpy stopped(worker, &CaptureWorker::captureStopped);
-        QSignalSpy failed(worker, &CaptureWorker::captureError);
+        worker->moveToThread(thread.get());
+        connect(thread.get(), &QThread::finished, worker, &QObject::deleteLater);
+        CaptureObservation observation;
+        observeCapture(worker, observation);
         std::vector<RawPacket> captured;
         auto drain = [&]() {
             auto batch = queue->take(512);
@@ -191,22 +221,22 @@ private slots:
         QString failure;
         QProcess process;
         process.setProcessChannelMode(QProcess::MergedChannels);
-        thread.start();
+        thread->start();
         QMetaObject::invokeMethod(worker, "startCapture", Qt::QueuedConnection, Q_ARG(QString, loopback));
         QElapsedTimer timer;
         timer.start();
-        while (started.isEmpty() && failed.isEmpty() && timer.elapsed() < 3000) { QTest::qWait(5); drain(); }
-        if (!failed.isEmpty()) failure = failed.first().first().toString();
-        else if (started.isEmpty()) failure = QStringLiteral("启动回环接口超时");
+        while (observation.started == 0 && observation.errors.isEmpty() && timer.elapsed() < 3000) { QTest::qWait(5); drain(); }
+        if (!observation.errors.isEmpty()) failure = observation.errors.first();
+        else if (observation.started == 0) failure = QStringLiteral("启动回环接口超时");
         if (failure.isEmpty()) {
             const QString python = qEnvironmentVariable("COURSESNIFFER_PYTHON", QStringLiteral("python3"));
             const QString script = QString::fromUtf8(SNIFFER_SOURCE_DIR) + QStringLiteral("/demo/run_demo.py");
             process.start(python, {script, QStringLiteral("--repeat"), QStringLiteral("1")});
             timer.restart();
-            while (process.state() != QProcess::NotRunning && timer.elapsed() < 20000 && failed.isEmpty()) {
+            while (process.state() != QProcess::NotRunning && timer.elapsed() < 20000 && observation.errors.isEmpty()) {
                 QTest::qWait(5); drain();
             }
-            if (!failed.isEmpty()) failure = failed.first().first().toString();
+            if (!observation.errors.isEmpty()) failure = observation.errors.first();
             else if (process.state() != QProcess::NotRunning) failure = QStringLiteral("演示通信执行超时");
             else if (process.error() == QProcess::FailedToStart)
                 failure = QStringLiteral("无法启动 Python：%1").arg(process.errorString());
@@ -221,9 +251,7 @@ private slots:
             process.terminate();
             if (!process.waitForFinished(2000)) { process.kill(); process.waitForFinished(2000); }
         }
-        QMetaObject::invokeMethod(worker, "stopCapture", Qt::BlockingQueuedConnection);
-        thread.quit();
-        const bool threadFinished = thread.wait(3000);
+        const bool threadFinished = stopCaptureThread(worker, thread);
         while (!queue->empty()) drain();
         QVERIFY(threadFinished);
         QVERIFY2(failure.isEmpty(), qPrintable(failure));

@@ -15,6 +15,6 @@ PYTHON_PATH="$(command -v python3)"
 mkdir -p "$RESULT_DIR"
 sudo env QT_QPA_PLATFORM=offscreen COURSESNIFFER_LIVE_TEST=1 \
     COURSESNIFFER_PYTHON="$PYTHON_PATH" \
-    "$TEST_PATH" idleLiveCaptureStop liveLoopbackTraffic \
-    -o -,txt 2>&1 | tee "$RESULT_DIR/live_capture.txt"
+    "$PYTHON_PATH" "$PROJECT_DIR/scripts/run_capture_tests.py" \
+    "$TEST_PATH" 2>&1 | tee "$RESULT_DIR/live_capture.txt"
 echo "本机抓包验证完成，结果位于 $RESULT_DIR/live_capture.txt"

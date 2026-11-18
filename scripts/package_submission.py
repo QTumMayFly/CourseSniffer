@@ -15,11 +15,11 @@ def main():
         if not path.is_file() or path.suffix.lower() != suffix or path.stat().st_size == 0:
             parser.error(f"文件不可用：{path}")
     if not args.report.read_bytes().startswith(b"%PDF-"):
-        parser.error("报告需要有效的 PDF 文件。")
+        parser.error("报告文件缺少 PDF 文件签名。")
     with args.video.open("rb") as handle:
         header = handle.read(32)
     if b"ftyp" not in header:
-        parser.error("视频需要有效的 MP4 文件。")
+        parser.error("视频文件缺少 MP4 文件签名。")
     base = "仲泓宇_202618013229068"
     top = base + "_EX1A"
     args.output.mkdir(parents=True, exist_ok=True)
@@ -43,7 +43,8 @@ def main():
         error = archive.testzip()
         if error:
             raise RuntimeError(f"ZIP 校验失败：{error}")
-    print(destination)
+    print(f"文件签名及 ZIP 完整性检查通过：{destination}")
+    print("请打开报告并完整播放视频，确认内容、画面和声音符合提交要求。")
 
 if __name__ == "__main__":
     main()
