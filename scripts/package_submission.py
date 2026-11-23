@@ -26,7 +26,7 @@ def main():
     destination = args.output / (top + ".zip")
     if destination.exists():
         parser.error(f"目标文件已经存在，请选择其他输出目录：{destination}")
-    excluded = {".git", "build", "local-validation", "__pycache__"}
+    excluded = {".git", "build", "local-validation", "recordings", "__pycache__"}
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(root.rglob("*")):
             relative = path.relative_to(root)
