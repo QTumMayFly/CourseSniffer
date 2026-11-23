@@ -37,6 +37,8 @@ QVariant PacketTableModel::data(const QModelIndex& index, int role) const {
         if (packet->malformed) return QColor(QStringLiteral("#A33A2B"));
         if (index.column() == ProtocolName) {
             if (packet->has(Protocol::Http)) return QColor(QStringLiteral("#087B67"));
+            if (packet->has(Protocol::Dns)) return QColor(QStringLiteral("#7054A4"));
+            if (packet->has(Protocol::Arp)) return QColor(QStringLiteral("#95651C"));
             if (packet->has(Protocol::Tcp)) return QColor(QStringLiteral("#315AA8"));
             if (packet->has(Protocol::Udp)) return QColor(QStringLiteral("#7857A3"));
         }

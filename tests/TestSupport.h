@@ -16,6 +16,7 @@ struct TestSuite {
 #define CHECK(condition) do { if (!(condition)) throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " #condition); } while (false)
 
 void runParserTests(TestSuite& suite);
+void runDnsArpTests(TestSuite& suite);
 void runFilterTests(TestSuite& suite);
 void runTcpTests(TestSuite& suite);
 void runHttpTests(TestSuite& suite);

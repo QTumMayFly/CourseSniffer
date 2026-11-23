@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 #include "ui/DemoPackets.h"
 #include "ui/StreamDialog.h"
+#include "ui/LiveVerification.h"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
@@ -11,7 +12,7 @@
 int main(int argc, char* argv[]) {
     QApplication application(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("CourseSniffer"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("1.0.0"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("1.1.0"));
     QCoreApplication::setOrganizationName(QStringLiteral("CourseSniffer"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("课程实验 1A 网络嗅探器"));
@@ -21,8 +22,16 @@ int main(int argc, char* argv[]) {
     QCommandLineOption smoke(QStringLiteral("smoke-test"), QStringLiteral("显示窗口并自动结束界面启动检查。"));
     QCommandLineOption screenshot(QStringLiteral("screenshot"), QStringLiteral("保存主窗口截图并退出。"), QStringLiteral("path"));
     QCommandLineOption streamScreenshot(QStringLiteral("stream-screenshot"), QStringLiteral("保存首条 TCP 连接内容窗口截图并退出。"), QStringLiteral("path"));
-    parser.addOptions({demo, demoPcap, smoke, screenshot, streamScreenshot});
+    QCommandLineOption captureProof(QStringLiteral("capture-proof"), QStringLiteral("执行实际回环抓包验证并保存日志和窗口截图。"), QStringLiteral("directory"));
+    QCommandLineOption demoScript(QStringLiteral("demo-script"), QStringLiteral("实际验证使用的 demo/run_demo.py 路径。"), QStringLiteral("path"));
+    QCommandLineOption proofInterface(QStringLiteral("proof-interface"), QStringLiteral("实际验证使用的回环接口。"), QStringLiteral("name"), QStringLiteral("lo0"));
+    parser.addOptions({demo, demoPcap, smoke, screenshot, streamScreenshot, captureProof, demoScript, proofInterface});
     parser.process(application);
+    if (parser.isSet(captureProof) && (!parser.isSet(demoScript) || parser.isSet(demo) || parser.isSet(demoPcap) || parser.isSet(smoke) || parser.isSet(screenshot) || parser.isSet(streamScreenshot))) {
+        QTextStream(stderr) << "实际验证需要 --demo-script，并使用独立的实际抓包会话。\n";
+        return 2;
+    }
+    if (parser.isSet(captureProof)) application.setQuitOnLastWindowClosed(false);
     sniffer::MainWindow window;
     if (parser.isSet(demoPcap)) {
         QString error;
@@ -32,7 +41,10 @@ int main(int argc, char* argv[]) {
         if (!error.isEmpty()) QTextStream(stderr) << error << '\n';
     } else if (parser.isSet(demo) || parser.isSet(streamScreenshot)) window.loadDemoPackets(sniffer::builtInDemoPackets());
     window.show();
-    if (parser.isSet(screenshot) || parser.isSet(streamScreenshot)) {
+    if (parser.isSet(captureProof)) {
+        sniffer::startLiveVerification(window, QDir(parser.value(captureProof)).absolutePath(),
+                                      QFileInfo(parser.value(demoScript)).absoluteFilePath(), parser.value(proofInterface));
+    } else if (parser.isSet(screenshot) || parser.isSet(streamScreenshot)) {
         const bool stream = parser.isSet(streamScreenshot);
         const QString path = parser.value(stream ? streamScreenshot : screenshot);
         QTimer::singleShot(700, &application, [&application, &window, path, stream]() {

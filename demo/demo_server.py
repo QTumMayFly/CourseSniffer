@@ -6,6 +6,7 @@ import signal
 import socket
 import socketserver
 import threading
+from dns_demo import make_response
 
 
 class HttpHandler(BaseHTTPRequestHandler):
@@ -55,16 +56,40 @@ class Udp6Server(UdpServer):
         super().server_bind()
 
 
+class DnsHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        data, connection = self.request
+        response = make_response(data)
+        if response is not None:
+            connection.sendto(response, self.client_address)
+
+
+class DnsServer(UdpServer):
+    allow_reuse_address = False
+
+
+class Dns6Server(DnsServer):
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        super().server_bind()
+
+
 class DemoServers:
-    def __init__(self, http_port=8080, udp_port=9999):
+    def __init__(self, http_port=8080, udp_port=9999, dns=False, dns_port=53):
         self.servers = []
         self.threads = []
+        self.active_servers = []
         specs = [
             (ThreadingHTTPServer, ("127.0.0.1", http_port), HttpHandler),
             (Http6Server, ("::1", http_port), HttpHandler),
             (UdpServer, ("127.0.0.1", udp_port), UdpHandler),
             (Udp6Server, ("::1", udp_port), UdpHandler),
         ]
+        if dns:
+            specs += [(DnsServer, ("127.0.0.1", dns_port), DnsHandler),
+                      (Dns6Server, ("::1", dns_port), DnsHandler)]
         try:
             for cls, address, handler in specs:
                 server = cls(address, handler)
@@ -81,29 +106,37 @@ class DemoServers:
                                       kwargs={"poll_interval": 0.05}, daemon=True)
             thread.start()
             self.threads.append(thread)
+            self.active_servers.append(server)
 
     def close(self):
-        for server in self.servers:
+        for server in self.active_servers:
             server.shutdown()
+        for server in self.servers:
             server.server_close()
         for thread in self.threads:
             thread.join(timeout=2)
+        self.active_servers.clear()
+        self.servers.clear()
+        self.threads.clear()
 
 
 def main():
     parser = argparse.ArgumentParser(description="本机 HTTP 与 UDP 演示服务")
     parser.add_argument("--duration", type=float, default=0,
                         help="自动结束前的运行秒数，零表示等待终止操作")
+    parser.add_argument("--dns", action="store_true", help="在回环 UDP 53 端口启动 DNS 演示服务，需要相应绑定权限")
     args = parser.parse_args()
     stop = threading.Event()
     for sig in [signal.SIGINT, signal.SIGTERM]:
         signal.signal(sig, lambda signum, frame: stop.set())
     try:
-        services = DemoServers()
+        services = DemoServers(dns=args.dns)
     except OSError as error:
-        parser.exit(1, f"演示服务启动失败：{error}\n请检查端口 8080、9999 和 IPv6 回环支持。\n")
+        parser.exit(1, f"演示服务启动失败：{error}\n请检查端口 8080、9999、启用时的 53 端口与 IPv6 回环支持。\n")
     services.start()
     print("服务已启动：HTTP 8080，UDP 9999；绑定 127.0.0.1 和 ::1。", flush=True)
+    if args.dns:
+        print("DNS 服务绑定回环 UDP 53，提供 example.test 的 A 与 AAAA 记录。", flush=True)
     try:
         stop.wait(args.duration if args.duration > 0 else None)
     finally:

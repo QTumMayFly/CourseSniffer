@@ -25,12 +25,22 @@ public:
     ~MainWindow() override;
     void loadDemoPackets(std::vector<RawPacket> packets, const QString& source = {});
     StreamDialog* showFirstStream();
+    StreamDialog* showConnection(std::uint64_t connectionId);
+    std::optional<StreamView> traceConnection(std::uint64_t connectionId) const;
+    void setVerificationActive(bool active);
     PacketTableModel* packetModel() const { return model_; }
     PacketFilterModel* proxyModel() const { return proxy_; }
     bool captureBusy() const;
+    bool startCaptureOnInterface(const QString& interfaceName);
+    void requestCaptureStop();
+    CaptureSummary lastCaptureSummary() const { return lastSummary_; }
+    bool captureHasError() const { return captureError_ || lastSummary_.error; }
 signals:
     void requestStart(const QString& interfaceName);
     void requestStop();
+    void sessionStarted(const QString& interfaceName, int linkType);
+    void sessionFinished(const sniffer::CaptureSummary& summary);
+    void verificationCloseRequested();
 protected:
     void closeEvent(QCloseEvent* event) override;
 private slots:
@@ -43,6 +53,7 @@ private slots:
     void traceSelected();
     void onCaptureStarted(const QString& interfaceName, int linkType);
     void onCaptureStopped(const sniffer::CaptureSummary& summary);
+    void onCaptureModeChanged(const sniffer::CaptureSummary& summary);
 private:
     enum class State { Idle, Starting, Capturing, Stopping };
     void buildUi();
@@ -69,6 +80,7 @@ private:
     QLineEdit* filter_ = nullptr;
     QLabel* filterError_ = nullptr;
     QLabel* sessionDescription_ = nullptr;
+    QLabel* captureMode_ = nullptr;
     QLabel* stateLabel_ = nullptr;
     QLabel* counts_ = nullptr;
     QLabel* statistics_ = nullptr;
@@ -80,6 +92,7 @@ private:
     bool closeRequested_ = false;
     bool captureError_ = false;
     bool demo_ = false;
+    bool verificationActive_ = false;
     CaptureSummary lastSummary_;
 };
 }

@@ -30,6 +30,8 @@ void PacketRecord::add(Protocol protocol) {
 }
 
 std::string PacketRecord::protocolName() const {
+    if (has(Protocol::Dns)) return "DNS";
+    if (has(Protocol::Arp)) return "ARP";
     if (has(Protocol::Http)) return "HTTP";
     if (has(Protocol::Tcp)) return "TCP";
     if (has(Protocol::Udp)) return "UDP";

@@ -4,6 +4,8 @@
 #include <QFile>
 #include <pcap/pcap.h>
 #include <sys/socket.h>
+#include <algorithm>
+#include <array>
 #include <cstring>
 
 namespace sniffer {
@@ -64,9 +66,8 @@ Bytes ipv6(std::uint8_t protocol, Bytes payload) {
     packet.insert(packet.end(), ip.begin(), ip.end());
     return packet;
 }
-Bytes udp(bool version6) {
-    const std::string payload = "course-udp-demo";
-    Bytes segment(8); put16(segment, 0, 53000); put16(segment, 2, 9999);
+Bytes udpPacket(bool version6, std::uint16_t sourcePort, std::uint16_t destinationPort, Bytes payload) {
+    Bytes segment(8); put16(segment, 0, sourcePort); put16(segment, 2, destinationPort);
     put16(segment, 4, static_cast<std::uint16_t>(8 + payload.size()));
     segment.insert(segment.end(), payload.begin(), payload.end());
     if (version6) {
@@ -77,6 +78,58 @@ Bytes udp(bool version6) {
         return ipv6(17, std::move(segment));
     }
     return ipv4(17, std::move(segment));
+}
+Bytes udp(bool version6) {
+    const std::string payload = "course-udp-demo";
+    return udpPacket(version6, 53000, 9999, Bytes(payload.begin(), payload.end()));
+}
+Bytes dns(bool version6, bool response) {
+    const std::uint16_t type = version6 ? 28 : 1;
+    Bytes message(12);
+    put16(message, 0, static_cast<std::uint16_t>(0x1A00 + type));
+    put16(message, 2, response ? 0x8500 : 0x0100);
+    put16(message, 4, 1);
+    put16(message, 6, response ? 1 : 0);
+    const Bytes question{7,'e','x','a','m','p','l','e',4,'t','e','s','t',0};
+    message.insert(message.end(), question.begin(), question.end());
+    const auto questionEnd = message.size();
+    message.resize(questionEnd + 4);
+    put16(message, questionEnd, type);
+    put16(message, questionEnd + 2, 1);
+    if (response) {
+        Bytes answer(12);
+        put16(answer, 0, 0xC00C);
+        put16(answer, 2, type);
+        put16(answer, 4, 1);
+        put32(answer, 6, 60);
+        put16(answer, 10, version6 ? 16 : 4);
+        Bytes address = version6 ? Bytes(16) : Bytes{192,0,2,123};
+        if (version6) {
+            address[0] = 0x20; address[1] = 0x01; address[2] = 0x0D; address[3] = 0xB8;
+            address[14] = 0x01; address[15] = 0x23;
+        }
+        answer.insert(answer.end(), address.begin(), address.end());
+        message.insert(message.end(), answer.begin(), answer.end());
+    }
+    const std::uint16_t clientPort = version6 ? 53101 : 53100;
+    return udpPacket(version6, response ? 53 : clientPort, response ? clientPort : 53, std::move(message));
+}
+Bytes arp(bool response) {
+    const std::array<std::uint8_t, 6> client{0x02,0,0,0,0,1};
+    const std::array<std::uint8_t, 6> server{0x02,0,0,0,0,2};
+    Bytes frame(42);
+    if (response) std::copy(client.begin(), client.end(), frame.begin());
+    else std::fill_n(frame.begin(), 6, 0xFF);
+    const auto& sender = response ? server : client;
+    std::copy(sender.begin(), sender.end(), frame.begin() + 6);
+    put16(frame, 12, 0x0806);
+    put16(frame, 14, 1); put16(frame, 16, 0x0800);
+    frame[18] = 6; frame[19] = 4; put16(frame, 20, response ? 2 : 1);
+    std::copy(sender.begin(), sender.end(), frame.begin() + 22);
+    put32(frame, 28, response ? 0xC0000201U : 0xC000027BU);
+    if (response) std::copy(client.begin(), client.end(), frame.begin() + 32);
+    put32(frame, 38, response ? 0xC000027BU : 0xC0000201U);
+    return frame;
 }
 Bytes echo(bool version6) {
     Bytes payload{static_cast<std::uint8_t>(version6 ? 128 : 8),0,0,0,0x12,0x34,0,1,'d','e','m','o'};
@@ -95,12 +148,12 @@ Bytes echo(bool version6) {
 std::vector<RawPacket> builtInDemoPackets() {
     std::vector<RawPacket> records;
     const auto start = QDateTime::currentMSecsSinceEpoch() * 1000;
-    auto add = [&](Bytes bytes) {
+    auto add = [&](Bytes bytes, int linkType = DLT_NULL) {
         RawPacket packet;
         packet.id = records.size() + 1;
         packet.timestampMicros = start + static_cast<std::int64_t>(records.size()) * 1357;
         packet.wireLength = static_cast<std::uint32_t>(bytes.size());
-        packet.linkType = DLT_NULL;
+        packet.linkType = linkType;
         packet.bytes = std::move(bytes);
         records.push_back(std::move(packet));
     };
@@ -123,6 +176,9 @@ std::vector<RawPacket> builtInDemoPackets() {
     add(tcp(true, responseEnd, requestEnd + 1, 0x11));
     add(tcp(false, requestEnd + 1, responseEnd + 1, 0x10));
     add(udp(false)); add(echo(false)); add(udp(true)); add(echo(true));
+    add(dns(false, false)); add(dns(false, true));
+    add(dns(true, false)); add(dns(true, true));
+    add(arp(false), DLT_EN10MB); add(arp(true), DLT_EN10MB);
     return records;
 }
 

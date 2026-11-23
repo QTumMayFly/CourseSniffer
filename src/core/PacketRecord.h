@@ -11,7 +11,8 @@ namespace sniffer {
 using Bytes = std::vector<std::uint8_t>;
 enum class Protocol : std::uint32_t {
     Ipv4 = 1U, Ipv6 = 2U, Tcp = 4U, Udp = 8U,
-    Icmp = 16U, Icmp6 = 32U, Http = 64U
+    Icmp = 16U, Icmp6 = 32U, Http = 64U,
+    Dns = 128U, Arp = 256U
 };
 
 struct RawPacket {

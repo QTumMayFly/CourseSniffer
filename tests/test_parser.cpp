@@ -263,10 +263,10 @@ void runParserTests(TestSuite& suite) {
         const Bytes original = {1,2,3};
         const auto unknown = PacketParser::parse(raw(original, 99));
         CHECK(unknown.raw.bytes == original && !unknown.notices.empty());
-        const auto arp = PacketParser::parse(raw(ethernet(Bytes(28), 0x0806)));
-        CHECK(!arp.has(Protocol::Ipv4));
-        CHECK(arp.source.text == "aa:bb:cc:dd:ee:ff");
-        CHECK(!arp.notices.empty());
+        const auto unknownType = PacketParser::parse(raw(ethernet(Bytes(28), 0x88b5)));
+        CHECK(!unknownType.has(Protocol::Ipv4));
+        CHECK(unknownType.source.text == "aa:bb:cc:dd:ee:ff");
+        CHECK(!unknownType.notices.empty());
     });
     suite.run("parser deterministic malformed packet corpus", [] {
         std::uint32_t state = 0x12345678;

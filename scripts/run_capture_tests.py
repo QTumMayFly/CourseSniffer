@@ -30,7 +30,7 @@ def main():
     executable = args.executable.resolve()
     if not executable.is_file() or not os.access(executable, os.X_OK):
         parser.error(f"测试程序不可执行：{executable}")
-    command = [str(executable), "idleLiveCaptureStop", "liveLoopbackTraffic", "-o", "-,txt"]
+    command = [str(executable), "idleLiveCaptureStop", "liveLoopbackTraffic", "livePhysicalInterfaceMode", "-o", "-,txt"]
     process = subprocess.Popen(command, start_new_session=True)
     try:
         return process.wait(timeout=90)

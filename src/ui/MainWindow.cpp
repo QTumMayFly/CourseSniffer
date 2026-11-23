@@ -49,6 +49,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), queue_(std::make_
     connect(this, &MainWindow::requestStop, worker_, &CaptureWorker::stopCapture, Qt::QueuedConnection);
     connect(worker_, &CaptureWorker::captureStarted, this, &MainWindow::onCaptureStarted);
     connect(worker_, &CaptureWorker::captureStopped, this, &MainWindow::onCaptureStopped);
+    connect(worker_, &CaptureWorker::captureModeChanged, this, &MainWindow::onCaptureModeChanged);
     connect(worker_, &CaptureWorker::captureError, this, [this](const QString& message) {
         captureError_ = true;
         sessionDescription_->setText(message);
@@ -101,6 +102,11 @@ void MainWindow::buildUi() {
     sessionDescription_->setWordWrap(true);
     sessionDescription_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     outer->addWidget(sessionDescription_);
+    captureMode_ = new QLabel(QStringLiteral("捕获模式根据接口的回环标志自动选择。"));
+    captureMode_->setObjectName(QStringLiteral("captureMode"));
+    captureMode_->setWordWrap(true);
+    captureMode_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    outer->addWidget(captureMode_);
 
     auto* toolbar = new QWidget;
     toolbar->setObjectName(QStringLiteral("toolbarCard"));
@@ -127,7 +133,7 @@ void MainWindow::buildUi() {
     filterRow->addWidget(new QLabel(QStringLiteral("协议过滤")));
     filter_ = new QLineEdit;
     filter_->setObjectName(QStringLiteral("filterEdit"));
-    filter_->setPlaceholderText(QStringLiteral("例如：ipv6 and (tcp or icmp6)"));
+    filter_->setPlaceholderText(QStringLiteral("例如：tcp.port == 8080 or dns"));
     filter_->setMaxLength(1024);
     filter_->setClearButtonEnabled(true);
     filterRow->addWidget(filter_, 1);
@@ -138,7 +144,7 @@ void MainWindow::buildUi() {
     trace_->setObjectName(QStringLiteral("traceButton"));
     filterRow->addWidget(trace_);
     outer->addLayout(filterRow);
-    filterError_ = new QLabel(QStringLiteral("支持 http、tcp、udp、ipv4、ipv6、icmp、icmp6，以及 and、or、not 和括号。"));
+    filterError_ = new QLabel(QStringLiteral("支持 http、dns、arp、tcp、udp、ipv4、ipv6、icmp、icmp6；可组合 ip.addr == 127.0.0.1、tcp.port == 8080 和逻辑运算。"));
     filterError_->setObjectName(QStringLiteral("filterStatus"));
     filterError_->setWordWrap(true);
     outer->addWidget(filterError_);
@@ -218,7 +224,7 @@ void MainWindow::buildUi() {
         "QWidget { font-size: 13px; }"
         "QLabel#pageTitle { font-size: 26px; font-weight: 700; color: #1C3046; }"
         "QLabel#courseLabel { color: #63758A; padding: 5px 10px; background: #E7ECF3; border-radius: 5px; }"
-        "QLabel#sessionDescription, QLabel#filterStatus { color: #63758A; }"
+        "QLabel#sessionDescription, QLabel#filterStatus, QLabel#captureMode { color: #63758A; }"
         "QLabel#packetCounts { color: #314C65; font-weight: 600; }"
         "QLabel#captureStatistics { color: #63758A; }"
         "QWidget#toolbarCard { background: white; border: 1px solid #DFE6EE; border-radius: 7px; }"
@@ -255,7 +261,9 @@ void MainWindow::populateInterfaces() {
         QString label = interface.name;
         if (!interface.addresses.isEmpty()) label += QStringLiteral(" · ") + interface.addresses;
         interfaces_->addItem(label, interface.name);
-        interfaces_->setItemData(interfaces_->count() - 1, interface.description + '\n' + interface.addresses, Qt::ToolTipRole);
+        interfaces_->setItemData(interfaces_->count() - 1, interface.flags, Qt::UserRole + 1);
+        const QString mode = interface.isLoopback() ? QStringLiteral("回环接口，请求普通模式") : QStringLiteral("非回环接口，请求混杂模式");
+        interfaces_->setItemData(interfaces_->count() - 1, interface.description + '\n' + interface.addresses + '\n' + mode, Qt::ToolTipRole);
     }
     int preferred = interfaces_->findData(QStringLiteral("en0"));
     if (preferred < 0) preferred = interfaces_->findData(QStringLiteral("eth0"));
@@ -268,6 +276,31 @@ void MainWindow::populateInterfaces() {
 
 bool MainWindow::captureBusy() const { return state_ != State::Idle; }
 
+bool MainWindow::startCaptureOnInterface(const QString& interfaceName) {
+    if (captureBusy() || model_->rowCount() != 0) return false;
+    const int index = interfaces_->findData(interfaceName);
+    if (index < 0) return false;
+    interfaces_->setCurrentIndex(index);
+    startCapture();
+    return captureBusy();
+}
+
+void MainWindow::requestCaptureStop() { stopCapture(); }
+
+void MainWindow::setVerificationActive(bool active) {
+    verificationActive_ = active;
+    filter_->setEnabled(!active);
+    if (auto* apply = findChild<QPushButton*>(QStringLiteral("applyFilterButton"))) apply->setEnabled(!active);
+    updateControls();
+}
+
+std::optional<StreamView> MainWindow::traceConnection(std::uint64_t connectionId) const {
+    if (captureBusy()) return std::nullopt;
+    return tracker_.trace(connectionId);
+}
+
+StreamDialog* MainWindow::showConnection(std::uint64_t connectionId) { return showStream(connectionId); }
+
 void MainWindow::resetSession() {
     queue_->clear(); model_->clear(); tracker_.clear();
     details_->clear(); rawBytes_->clear();
@@ -275,6 +308,9 @@ void MainWindow::resetSession() {
     captureError_ = false; demo_ = false;
     statistics_->setText(QStringLiteral("会话上限 10000 个数据包 / 64 MiB"));
     sessionDescription_->setStyleSheet(QString());
+    captureMode_->setText(QStringLiteral("捕获模式根据接口的回环标志自动选择。"));
+    captureMode_->setToolTip(QString());
+    captureMode_->setStyleSheet(QString());
     updateCounts();
 }
 
@@ -313,14 +349,26 @@ void MainWindow::onCaptureStarted(const QString& interfaceName, int linkType) {
     if (state_ != State::Stopping) state_ = State::Capturing;
     sessionDescription_->setText(QStringLiteral("实时抓包 · 接口 %1 · 链路类型 %2").arg(interfaceName).arg(linkType));
     updateControls();
+    emit sessionStarted(interfaceName, linkType);
 }
 
 void MainWindow::onCaptureStopped(const CaptureSummary& summary) {
-    lastSummary_ = summary;
+    onCaptureModeChanged(summary);
+    captureError_ = captureError_ || summary.error;
+    if (captureError_) sessionDescription_->setStyleSheet(QStringLiteral("color: #A33A2B;"));
     workerFinished_ = true;
     state_ = State::Stopping;
     updateControls();
     drainQueue();
+}
+
+void MainWindow::onCaptureModeChanged(const CaptureSummary& summary) {
+    lastSummary_ = summary;
+    QString text = captureModeDescription(summary);
+    if (!summary.warnings.isEmpty()) text += QStringLiteral("\n警告：") + summary.warnings.join(QStringLiteral("\n"));
+    captureMode_->setText(text);
+    captureMode_->setToolTip(summary.apiResults.join(QStringLiteral("\n")));
+    captureMode_->setStyleSheet(summary.warnings.isEmpty() ? QString() : QStringLiteral("color: #8A5A18;"));
 }
 
 void MainWindow::processPackets(std::vector<RawPacket> packets) {
@@ -361,6 +409,7 @@ void MainWindow::finishSession() {
             .arg(lastSummary_.interfaceReceived).arg(lastSummary_.interfaceDropped).arg(lastSummary_.driverDropped));
     } else statistics_->setText(QStringLiteral("接口统计不可用"));
     updateControls(); updateCounts(); showSelectedPacket();
+    emit sessionFinished(lastSummary_);
     if (closeRequested_) QTimer::singleShot(0, this, &QWidget::close);
 }
 
@@ -429,12 +478,12 @@ void MainWindow::updateCounts() {
 
 void MainWindow::updateControls() {
     const bool idle = state_ == State::Idle;
-    interfaces_->setEnabled(idle);
-    start_->setEnabled(idle && interfaces_->count() > 0);
-    stop_->setEnabled(state_ == State::Starting || state_ == State::Capturing);
-    clear_->setEnabled(idle && model_->rowCount() > 0);
+    interfaces_->setEnabled(idle && !verificationActive_);
+    start_->setEnabled(idle && !verificationActive_ && interfaces_->count() > 0);
+    stop_->setEnabled(!verificationActive_ && (state_ == State::Starting || state_ == State::Capturing));
+    clear_->setEnabled(idle && !verificationActive_ && model_->rowCount() > 0);
     const auto* selected = selectedPacket();
-    trace_->setEnabled(idle && selected && selected->connectionId != 0);
+    trace_->setEnabled(idle && !verificationActive_ && selected && selected->connectionId != 0);
     QString state;
     QString background = QStringLiteral("#E7EDF4");
     QString color = QStringLiteral("#557089");
@@ -475,9 +524,10 @@ void MainWindow::loadDemoPackets(std::vector<RawPacket> packets, const QString& 
     if (captureBusy()) return;
     resetSession();
     demo_ = true;
+    captureMode_->setText(QStringLiteral("演示数据采用固定样例，捕获模式尚未请求。"));
     processPackets(std::move(packets));
     sessionDescription_->setText(source.isEmpty()
-        ? QStringLiteral("演示数据 · 内置回环通信样例 · 实时抓包尚未启动")
+        ? QStringLiteral("演示数据 · 内置网络协议样例 · 实时抓包尚未启动")
         : QStringLiteral("演示数据 · %1 · 实时抓包尚未启动").arg(source));
     for (int row = 0; row < proxy_->rowCount(); ++row) {
         const auto* packet = model_->packetAt(proxy_->mapToSource(proxy_->index(row, 0)).row());
@@ -488,6 +538,11 @@ void MainWindow::loadDemoPackets(std::vector<RawPacket> packets, const QString& 
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    if (verificationActive_) {
+        event->ignore();
+        emit verificationCloseRequested();
+        return;
+    }
     if (captureBusy()) {
         closeRequested_ = true;
         stopCapture();

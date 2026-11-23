@@ -1,19 +1,40 @@
 #include "FilterParser.h"
 
 #include <cctype>
+#include <arpa/inet.h>
 #include <stdexcept>
 #include <utility>
 
 namespace sniffer {
 
 struct FilterNode {
-    enum class Kind { Protocol, And, Or, Not } kind = Kind::Protocol;
+    enum class Kind { Protocol, Address, Port, And, Or, Not } kind = Kind::Protocol;
+    enum class Side { Either, Source, Destination } side = Side::Either;
     Protocol protocol = Protocol::Ipv4;
+    int addressFamily = 0;
+    std::array<std::uint8_t, 16> address{};
+    std::uint16_t port = 0;
     std::shared_ptr<const FilterNode> left;
     std::shared_ptr<const FilterNode> right;
     bool matches(const PacketRecord& packet) const {
         switch (kind) {
         case Kind::Protocol: return packet.has(protocol);
+        case Kind::Address: {
+            if (!packet.has(Protocol::Ipv4) && !packet.has(Protocol::Ipv6)) return false;
+            const auto same = [this](const Endpoint& endpoint) {
+                if (endpoint.family != addressFamily) return false;
+                const auto length = addressFamily == 4 ? 4U : 16U;
+                for (std::size_t index = 0; index < length; ++index)
+                    if (endpoint.address[index] != address[index]) return false;
+                return true;
+            };
+            return (side != Side::Destination && same(packet.source)) ||
+                   (side != Side::Source && same(packet.destination));
+        }
+        case Kind::Port:
+            if (!packet.hasPorts || !packet.has(protocol)) return false;
+            return (side != Side::Destination && packet.source.port == port) ||
+                   (side != Side::Source && packet.destination.port == port);
         case Kind::And: return left->matches(packet) && right->matches(packet);
         case Kind::Or: return left->matches(packet) || right->matches(packet);
         case Kind::Not: return !left->matches(packet);
@@ -24,7 +45,7 @@ struct FilterNode {
 
 namespace {
 struct ParseFailure { FilterError error; };
-enum class TokenKind { Word, Left, Right, End };
+enum class TokenKind { Word, Equal, Left, Right, End };
 struct Token { TokenKind kind; std::string text; std::size_t position; };
 
 class Parser {
@@ -51,7 +72,14 @@ private:
         const auto character = input_[cursor_++];
         if (character == '(') { token_ = {TokenKind::Left, "(", start}; return; }
         if (character == ')') { token_ = {TokenKind::Right, ")", start}; return; }
-        const auto isIdentifier = [](unsigned char byte) { return std::isalnum(byte) || byte == '_'; };
+        if (character == '=' && cursor_ < input_.size() && input_[cursor_] == '=') {
+            ++cursor_;
+            token_ = {TokenKind::Equal, "==", start};
+            return;
+        }
+        const auto isIdentifier = [](unsigned char byte) {
+            return std::isalnum(byte) || byte == '_' || byte == '.' || byte == ':';
+        };
         if (!isIdentifier(static_cast<unsigned char>(character))) {
             throw ParseFailure{{start, "过滤表达式包含无效字符。"}};
         }
@@ -99,11 +127,12 @@ private:
             next();
             return inner;
         }
-        if (token_.kind != TokenKind::Word) fail("此处需要协议名称或左括号。");
+        if (token_.kind != TokenKind::Word) fail("此处需要协议名称、字段条件或左括号。");
         const std::pair<const char*, Protocol> protocols[] = {
             {"http", Protocol::Http}, {"tcp", Protocol::Tcp}, {"udp", Protocol::Udp},
             {"ipv4", Protocol::Ipv4}, {"ipv6", Protocol::Ipv6},
-            {"icmp", Protocol::Icmp}, {"icmp6", Protocol::Icmp6}
+            {"icmp", Protocol::Icmp}, {"icmp6", Protocol::Icmp6},
+            {"dns", Protocol::Dns}, {"arp", Protocol::Arp}
         };
         for (const auto& item : protocols) if (token_.text == item.first) {
             auto node = std::make_shared<FilterNode>();
@@ -111,7 +140,40 @@ private:
             next();
             return node;
         }
-        fail("未知协议名称：" + token_.text + "。");
+        const auto field = token_.text;
+        auto node = std::make_shared<FilterNode>();
+        if (field == "ip.addr" || field == "ip.src" || field == "ip.dst") {
+            node->kind = FilterNode::Kind::Address;
+            if (field == "ip.src") node->side = FilterNode::Side::Source;
+            if (field == "ip.dst") node->side = FilterNode::Side::Destination;
+        } else if (field == "tcp.port" || field == "tcp.srcport" || field == "tcp.dstport" ||
+                   field == "udp.port" || field == "udp.srcport" || field == "udp.dstport") {
+            node->kind = FilterNode::Kind::Port;
+            node->protocol = field.compare(0, 3, "tcp") == 0 ? Protocol::Tcp : Protocol::Udp;
+            if (field.find(".srcport") != std::string::npos) node->side = FilterNode::Side::Source;
+            if (field.find(".dstport") != std::string::npos) node->side = FilterNode::Side::Destination;
+        } else {
+            fail("未知协议名称或字段：" + token_.text + "。");
+        }
+        next();
+        if (token_.kind != TokenKind::Equal) fail("字段条件需要使用 == 连接取值。");
+        next();
+        if (token_.kind != TokenKind::Word) fail("字段条件缺少地址或端口取值。");
+        if (node->kind == FilterNode::Kind::Address) {
+            if (inet_pton(AF_INET, token_.text.c_str(), node->address.data()) == 1) node->addressFamily = 4;
+            else if (inet_pton(AF_INET6, token_.text.c_str(), node->address.data()) == 1) node->addressFamily = 6;
+            else fail("请输入有效的 IPv4 或 IPv6 数字地址。");
+        } else {
+            unsigned value = 0;
+            for (const unsigned char byte : token_.text) {
+                if (byte < '0' || byte > '9') fail("端口需要使用 0 至 65535 的十进制整数。");
+                value = value * 10 + static_cast<unsigned>(byte - '0');
+                if (value > 65535) fail("端口需要使用 0 至 65535 的十进制整数。");
+            }
+            node->port = static_cast<std::uint16_t>(value);
+        }
+        next();
+        return node;
     }
 };
 } // namespace

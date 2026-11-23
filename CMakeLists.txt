@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CourseSniffer VERSION 1.0.0 LANGUAGES CXX)
+project(CourseSniffer VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,6 +11,8 @@ option(SNIFFER_ENABLE_SANITIZERS "Enable address and undefined behavior checks" 
 add_library(sniffer_core STATIC
     src/core/PacketRecord.cpp
     src/core/PacketParser.cpp
+    src/core/DnsParser.cpp
+    src/core/ArpParser.cpp
     src/core/FilterParser.cpp
     src/core/HttpParser.cpp
     src/core/TcpTracker.cpp
@@ -29,12 +31,20 @@ if(BUILD_TESTING)
     add_executable(sniffer_core_tests
         tests/core_main.cpp
         tests/test_parser.cpp
+        tests/test_dns_arp.cpp
         tests/test_filter.cpp
         tests/test_http.cpp
         tests/test_tcp.cpp
     )
     target_link_libraries(sniffer_core_tests PRIVATE sniffer_core)
     add_test(NAME core_protocol_filter_stream COMMAND sniffer_core_tests)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME runtime_lifecycle
+            COMMAND ${Python3_EXECUTABLE} -m unittest discover
+                -s ${CMAKE_CURRENT_SOURCE_DIR}/tests -p "test_*.py" -v)
+        set_tests_properties(runtime_lifecycle PROPERTIES TIMEOUT 20)
+    endif()
 endif()
 
 if(SNIFFER_BUILD_GUI)

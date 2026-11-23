@@ -1,10 +1,12 @@
 #pragma once
 
 #include "core/PacketRecord.h"
+#include "CaptureModePolicy.h"
 #include <QObject>
 #include <QString>
 #include <QList>
 #include <QMetaType>
+#include <QStringList>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -19,6 +21,8 @@ struct NetworkInterface {
     QString name;
     QString description;
     QString addresses;
+    quint32 flags = 0;
+    bool isLoopback() const { return (flags & PCAP_IF_LOOPBACK) != 0; }
 };
 
 struct CaptureSummary {
@@ -32,7 +36,21 @@ struct CaptureSummary {
     quint64 driverDropped = 0;
     QString reason;
     QString warning;
+    QStringList warnings;
+    QStringList apiResults;
+    QString interfaceName;
+    quint32 interfaceFlags = 0;
+    bool interfaceFlagsKnown = false;
+    bool promiscuousRequested = false;
+    bool finalPromiscuousRequest = false;
+    bool ordinaryFallback = false;
+    bool activationAttempted = false;
+    bool captureActivated = false;
+    bool error = false;
+    int activationResult = 0;
 };
+
+QString captureModeDescription(const CaptureSummary& summary);
 
 class CaptureQueue {
 public:
@@ -66,6 +84,7 @@ signals:
     void captureStopped(const sniffer::CaptureSummary& summary);
     void captureError(const QString& message);
     void captureWarning(const QString& message);
+    void captureModeChanged(const sniffer::CaptureSummary& summary);
 private slots:
     void readBatch();
 private:
@@ -73,6 +92,10 @@ private:
     void receivePacket(const pcap_pkthdr* header, const unsigned char* bytes);
     void fail(const QString& operation, const QString& message);
     void finish(const QString& reason);
+    CaptureSetupAction activateAttempt(bool promiscuous);
+    void recordApiResult(const QString& operation, int result, const QString& detail = {});
+    void addWarning(const QString& message);
+    QString resultDetail(int status) const;
     std::shared_ptr<CaptureQueue> queue_;
     pcap* handle_ = nullptr;
     QTimer* timer_ = nullptr;

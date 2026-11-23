@@ -3,9 +3,10 @@
 import argparse
 import http.client
 import socket
+from dns_demo import send_dns
 
 
-def send_requests(http_port=8080, udp_port=9999, repeat=1):
+def send_requests(http_port=8080, udp_port=9999, repeat=1, dns=False, dns_port=53):
     results = []
     for iteration in range(repeat):
         for family, host, label in [(socket.AF_INET, "127.0.0.1", "IPv4"),
@@ -29,17 +30,20 @@ def send_requests(http_port=8080, udp_port=9999, repeat=1):
                 if reply != b"echo: " + message:
                     raise RuntimeError(f"{label} UDP 响应未通过检查")
                 results.append(f"{label} UDP 回应，长度 {len(reply)} 字节")
+            if dns:
+                results += [f"{label} {line}" for line in send_dns(family, host, dns_port)]
     return results
 
 
 def main():
     parser = argparse.ArgumentParser(description="产生本机演示通信")
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--dns", action="store_true")
     args = parser.parse_args()
     if not 1 <= args.repeat <= 100:
         parser.error("重复次数需要在 1 至 100 之间。")
     try:
-        for line in send_requests(repeat=args.repeat):
+        for line in send_requests(repeat=args.repeat, dns=args.dns):
             print(line)
     except (OSError, RuntimeError) as error:
         parser.exit(1, f"演示请求失败：{error}\n请确认 demo_server.py 已经运行。\n")

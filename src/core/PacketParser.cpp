@@ -1,4 +1,6 @@
 #include "PacketParser.h"
+#include "ArpParser.h"
+#include "DnsParser.h"
 
 #include <algorithm>
 #include <arpa/inet.h>
@@ -118,6 +120,7 @@ private:
         packet_.networkOffset = 14;
         if (type == 0x0800) ipv4(14);
         else if (type == 0x86dd) ipv6(14);
+        else if (type == 0x0806) ArpParser::parse(packet_, 14);
         else {
             packet_.summary = "EtherType " + hexNumber(type, 4);
             notice("当前解析器尚未支持该 EtherType。");
@@ -301,6 +304,7 @@ private:
         setPayload(offset + 8, offset + length);
         packet_.summary = number(packet_.source.port) + " → " + number(packet_.destination.port)
                         + "，负载 " + number(packet_.payloadLength) + " 字节";
+        if (packet_.source.port == 53 || packet_.destination.port == 53) DnsParser::parse(packet_);
     }
 
     void icmp(std::size_t offset, std::size_t end, bool ipv6) {

@@ -11,6 +11,22 @@
 
 namespace sniffer {
 
+QString captureModeDescription(const CaptureSummary& summary) {
+    if (!summary.interfaceFlagsKnown) return QStringLiteral("捕获模式：接口标志尚未取得");
+    const QString requested = summary.promiscuousRequested ? QStringLiteral("混杂模式") : QStringLiteral("普通模式（回环接口）");
+    QString result;
+    if (!summary.captureActivated) {
+        result = summary.activationAttempted
+            ? QStringLiteral("激活返回 %1，捕获未启动").arg(summary.activationResult)
+            : QStringLiteral("配置尚未完成");
+    } else {
+        const QString configured = summary.finalPromiscuousRequest ? QStringLiteral("混杂请求获 API 接受") : QStringLiteral("普通模式请求获 API 接受");
+        result = QStringLiteral("%1 · 激活返回 %2").arg(configured).arg(summary.activationResult);
+    }
+    if (summary.ordinaryFallback) result = QStringLiteral("普通模式回退 · ") + result;
+    return QStringLiteral("请求：%1 · %2。实际可见流量取决于接口和网络环境。").arg(requested, result);
+}
+
 bool CaptureQueue::push(RawPacket packet) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (packets_.size() >= MaxPackets || packet.bytes.size() > MaxBytes - bytes_) return false;
@@ -57,6 +73,7 @@ QList<NetworkInterface> CaptureWorker::enumerate(QString* error) {
         NetworkInterface item;
         item.name = QString::fromLocal8Bit(device->name);
         item.description = device->description ? QString::fromLocal8Bit(device->description) : QString();
+        item.flags = device->flags;
         QStringList addresses;
         for (auto* address = device->addresses; address; address = address->next) {
             if (!address->addr) continue;
@@ -81,33 +98,36 @@ void CaptureWorker::startCapture(const QString& interfaceName) {
     if (active_ || handle_) return;
     interfaceName_ = interfaceName;
     summary_ = CaptureSummary{};
+    summary_.interfaceName = interfaceName;
     stopReason_.clear();
     active_ = true;
+    QString enumerationError;
+    const auto devices = enumerate(&enumerationError);
+    if (!enumerationError.isEmpty()) { fail(QStringLiteral("枚举网络接口"), enumerationError); return; }
+    const auto device = std::find_if(devices.begin(), devices.end(), [&](const NetworkInterface& item) { return item.name == interfaceName; });
+    if (device == devices.end()) { fail(QStringLiteral("查找网络接口"), QStringLiteral("所选接口未出现在 libpcap 接口列表中。")); return; }
+    summary_.interfaceFlags = device->flags;
+    summary_.interfaceFlagsKnown = true;
+    summary_.promiscuousRequested = requestsPromiscuousMode(device->flags);
+    emit captureModeChanged(summary_);
+    auto action = activateAttempt(summary_.promiscuousRequested);
+    if (action == CaptureSetupAction::RetryOrdinary) {
+        summary_.ordinaryFallback = true;
+        if (handle_) { pcap_close(handle_); handle_ = nullptr; }
+        summary_.captureActivated = false;
+        addWarning(QStringLiteral("混杂请求需要普通模式回退，使用新的抓包句柄重新配置。"));
+        action = activateAttempt(false);
+    }
+    if (action != CaptureSetupAction::Continue) return;
     char error[PCAP_ERRBUF_SIZE]{};
-    const QByteArray interfaceBytes = interfaceName.toLocal8Bit();
-    handle_ = pcap_create(interfaceBytes.constData(), error);
-    if (!handle_) { fail(QStringLiteral("打开接口"), QString::fromLocal8Bit(error)); return; }
-    if (pcap_set_snaplen(handle_, 65535) != 0 ||
-        pcap_set_promisc(handle_, 0) != 0 ||
-        pcap_set_timeout(handle_, 100) != 0) {
-        fail(QStringLiteral("配置抓包参数"), QString::fromLocal8Bit(pcap_geterr(handle_)));
-        return;
-    }
-    const int activation = pcap_activate(handle_);
-    if (activation < 0) {
-        fail(QStringLiteral("激活抓包接口"), QString::fromLocal8Bit(pcap_geterr(handle_)));
-        return;
-    }
-    if (activation > 0) {
-        summary_.warning = QString::fromLocal8Bit(pcap_statustostr(activation));
-        emit captureWarning(summary_.warning);
-    }
     linkType_ = pcap_datalink(handle_);
     if (linkType_ < 0) {
         fail(QStringLiteral("读取链路类型"), QString::fromLocal8Bit(pcap_geterr(handle_)));
         return;
     }
-    if (pcap_setnonblock(handle_, 1, error) != 0) {
+    const int nonblocking = pcap_setnonblock(handle_, 1, error);
+    recordApiResult(QStringLiteral("pcap_setnonblock(1)"), nonblocking, QString::fromLocal8Bit(error));
+    if (nonblocking < 0) {
         fail(QStringLiteral("启用非阻塞读取"), QString::fromLocal8Bit(error));
         return;
     }
@@ -117,7 +137,69 @@ void CaptureWorker::startCapture(const QString& interfaceName) {
         connect(timer_, &QTimer::timeout, this, &CaptureWorker::readBatch);
     }
     timer_->start();
+    emit captureModeChanged(summary_);
     emit captureStarted(interfaceName_, linkType_);
+}
+
+QString CaptureWorker::resultDetail(int status) const {
+    if (status == 0) return QStringLiteral("调用成功");
+    QStringList detail;
+    const char* generic = pcap_statustostr(status);
+    if (generic && *generic) detail << QString::fromLocal8Bit(generic);
+    if (handle_) {
+        const QString specific = QString::fromLocal8Bit(pcap_geterr(handle_)).trimmed();
+        if (!specific.isEmpty() && !detail.contains(specific)) detail << specific;
+    }
+    return detail.join(QStringLiteral("；"));
+}
+
+void CaptureWorker::recordApiResult(const QString& operation, int result, const QString& detail) {
+    const QString information = detail.trimmed().isEmpty() ? resultDetail(result) : detail.trimmed();
+    const QString message = QStringLiteral("%1 返回 %2：%3").arg(operation).arg(result).arg(information);
+    summary_.apiResults << message;
+    if (result > 0) addWarning(message);
+}
+
+void CaptureWorker::addWarning(const QString& message) {
+    summary_.warnings << message;
+    summary_.warning = summary_.warnings.join('\n');
+    emit captureWarning(message);
+    emit captureModeChanged(summary_);
+}
+
+CaptureSetupAction CaptureWorker::activateAttempt(bool promiscuous) {
+    char error[PCAP_ERRBUF_SIZE]{};
+    summary_.finalPromiscuousRequest = promiscuous;
+    summary_.activationAttempted = false;
+    summary_.captureActivated = false;
+    handle_ = pcap_create(interfaceName_.toLocal8Bit().constData(), error);
+    if (!handle_) { fail(QStringLiteral("打开接口"), QString::fromLocal8Bit(error)); return CaptureSetupAction::Fail; }
+    const int snapshot = pcap_set_snaplen(handle_, 65535);
+    recordApiResult(QStringLiteral("pcap_set_snaplen(65535)"), snapshot);
+    if (snapshot < 0) { fail(QStringLiteral("配置捕获长度"), resultDetail(snapshot)); return CaptureSetupAction::Fail; }
+    const int mode = pcap_set_promisc(handle_, promiscuous ? 1 : 0);
+    recordApiResult(QStringLiteral("pcap_set_promisc(%1)").arg(promiscuous ? 1 : 0), mode);
+    const auto modeAction = captureSetupAction(promiscuous, mode);
+    if (modeAction == CaptureSetupAction::RetryOrdinary) {
+        if (mode < 0) addWarning(QStringLiteral("混杂模式设置返回 %1：%2").arg(mode).arg(resultDetail(mode)));
+        return modeAction;
+    }
+    if (modeAction == CaptureSetupAction::Fail) { fail(QStringLiteral("配置捕获模式"), resultDetail(mode)); return modeAction; }
+    const int timeout = pcap_set_timeout(handle_, 100);
+    recordApiResult(QStringLiteral("pcap_set_timeout(100)"), timeout);
+    if (timeout < 0) { fail(QStringLiteral("配置读取超时"), resultDetail(timeout)); return CaptureSetupAction::Fail; }
+    const int activation = pcap_activate(handle_);
+    summary_.activationAttempted = true;
+    summary_.activationResult = activation;
+    recordApiResult(QStringLiteral("pcap_activate()"), activation);
+    const auto action = captureSetupAction(promiscuous, activation);
+    if (action == CaptureSetupAction::RetryOrdinary) {
+        if (activation < 0) addWarning(QStringLiteral("混杂模式激活返回 %1：%2").arg(activation).arg(resultDetail(activation)));
+        return action;
+    }
+    if (action == CaptureSetupAction::Fail) { fail(QStringLiteral("激活抓包接口"), resultDetail(activation)); return action; }
+    summary_.captureActivated = true;
+    return CaptureSetupAction::Continue;
 }
 
 void CaptureWorker::readBatch() {
@@ -139,6 +221,7 @@ void CaptureWorker::packetCallback(unsigned char* user, const pcap_pkthdr* heade
         worker->receivePacket(header, bytes);
     } catch (const std::exception&) {
         ++worker->summary_.applicationDropped;
+        worker->summary_.error = true;
         worker->stopReason_ = QStringLiteral("数据包缓存分配失败，捕获已结束");
     }
 }
@@ -171,6 +254,8 @@ void CaptureWorker::receivePacket(const pcap_pkthdr* header, const unsigned char
 
 void CaptureWorker::fail(const QString& operation, const QString& message) {
     const QString detail = QStringLiteral("%1失败 · %2\n%3").arg(operation, interfaceName_, message);
+    summary_.error = true;
+    emit captureModeChanged(summary_);
     emit captureError(detail);
     finish(detail);
 }

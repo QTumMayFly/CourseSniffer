@@ -2,6 +2,7 @@
 int main() {
     TestSuite suite;
     runParserTests(suite);
+    runDnsArpTests(suite);
     runFilterTests(suite);
     runTcpTests(suite);
     runHttpTests(suite);
