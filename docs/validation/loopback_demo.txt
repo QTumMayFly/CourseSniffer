@@ -2,6 +2,11 @@ HTTP 127.0.0.1 "GET /lab?family=IPv4&request=1 HTTP/1.1" 200 -
 HTTP ::1 "GET /lab?family=IPv6&request=1 HTTP/1.1" 200 -
 IPv4 HTTP 200，正文 91 字节
 IPv4 UDP 回应，长度 30 字节
+IPv4 DNS example.test A 192.0.2.123
+IPv4 DNS example.test AAAA 2001:db8::123
 IPv6 HTTP 200，正文 91 字节
 IPv6 UDP 回应，长度 30 字节
-全部本机请求通过检查。
+IPv6 DNS example.test A 192.0.2.123
+IPv6 DNS example.test AAAA 2001:db8::123
+DNS demonstration transport validated on loopback UDP 15353.
+Live packet capture and UDP 53 binding are validated separately on the target Mac.

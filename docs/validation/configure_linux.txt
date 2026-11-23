@@ -15,6 +15,6 @@
 -- Found WrapOpenGL: TRUE
 -- Could NOT find XKB (missing: XKB_LIBRARY XKB_INCLUDE_DIR) (Required is at least version "0.5.0")
 -- Found WrapVulkanHeaders: /workspace/scratch/6a4e2dd015f9/work/sysroot/usr/include
--- Configuring done (0.9s)
+-- Configuring done (0.8s)
 -- Generating done (0.0s)
--- Build files have been written to: /workspace/scratch/6a4e2dd015f9/work/package_check/CourseSniffer/build
+-- Build files have been written to: /workspace/scratch/6a4e2dd015f9/work/release_build_v110

@@ -23,6 +23,30 @@
 [PASS] parser deterministic malformed packet corpus
 [PASS] packet endpoint identity uses binary addresses
 [PASS] packet safe payload and byte presentation
+[PASS] DNS IPv4 UDP query exposes ID flags counts and question
+[PASS] DNS compressed A response preserves address and source offsets
+[PASS] DNS IPv6 UDP query and AAAA response
+[PASS] DNS CNAME compression target can be reused by an A record
+[PASS] DNS authority additional and unknown record data remain visible
+[PASS] DNS header-only error and TC status are represented
+[PASS] DNS common name-bearing resource records preserve their fields
+[PASS] DNS port selection includes source 53 and excludes other ports
+[PASS] DNS arbitrary UDP 53 bytes do not receive a DNS label
+[PASS] DNS compression loops out-of-range and non-boundary pointers are rejected
+[PASS] DNS forward pointer and incomplete pointer are rejected
+[PASS] DNS compression pointer jump count is bounded
+[PASS] DNS name and label size limits are enforced
+[PASS] DNS total record count is bounded
+[PASS] DNS RDATA bounds and address lengths are validated
+[PASS] DNS CNAME encoded bytes remain inside RDATA
+[PASS] DNS reserved flags and undeclared tail are rejected
+[PASS] DNS captured truncation is visible at every prefix
+[PASS] DNS malformed deterministic corpus stays within packet bounds
+[PASS] ARP request exposes addresses and fixed header fields
+[PASS] ARP response summarizes the sender hardware mapping
+[PASS] ARP capture truncation does not read incomplete addresses
+[PASS] ARP invalid address lengths and unsupported formats are explicit
+[PASS] ARP unknown opcode and Ethernet padding keep known fields
 [PASS] filter empty expressions accept all packets
 [PASS] filter every protocol primitive
 [PASS] filter case normalization and overlapping protocol tags
@@ -32,6 +56,14 @@
 [PASS] filter errors include exact input position
 [PASS] filter length and parenthesis depth boundaries
 [PASS] filter unsuccessful compilation preserves an existing filter
+[PASS] filter IPv4 address and direction use binary addresses
+[PASS] filter IPv6 equivalent address spelling
+[PASS] filter IP conditions require a captured IP layer
+[PASS] filter TCP port and direction
+[PASS] filter UDP ports and protocol precedence
+[PASS] filter port bounds and incomplete headers
+[PASS] filter malformed address and port values are rejected
+[PASS] filter comparison errors retain exact token positions
 [PASS] TCP handshake and both directions share one connection
 [PASS] TCP out of order segments produce sequence ordered content
 [PASS] TCP full and partial retransmissions preserve one copy
@@ -73,4 +105,4 @@
 [PASS] HTTP TLS prefix is rejected
 [PASS] HTTP header bound applies before the body
 [PASS] HTTP oversized candidate retains a validated start line
-Passed: 75, Failed: 0
+Passed: 107, Failed: 0

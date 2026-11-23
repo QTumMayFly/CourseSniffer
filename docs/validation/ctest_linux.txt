@@ -1,11 +1,13 @@
-Test project /workspace/scratch/6a4e2dd015f9/work/package_check/CourseSniffer/build
+Test project /workspace/scratch/6a4e2dd015f9/work/release_build_v110
     Start 1: core_protocol_filter_stream
-1/3 Test #1: core_protocol_filter_stream ......   Passed    0.01 sec
-    Start 2: desktop_interaction
-2/3 Test #2: desktop_interaction ..............   Passed    0.84 sec
-    Start 3: desktop_startup
-3/3 Test #3: desktop_startup ..................   Passed    0.49 sec
+1/4 Test #1: core_protocol_filter_stream ......   Passed    0.02 sec
+    Start 2: runtime_lifecycle
+2/4 Test #2: runtime_lifecycle ................   Passed    1.86 sec
+    Start 3: desktop_interaction
+3/4 Test #3: desktop_interaction ..............   Passed    0.49 sec
+    Start 4: desktop_startup
+4/4 Test #4: desktop_startup ..................   Passed    0.49 sec
 
-100% tests passed out of 3
+100% tests passed out of 4
 
-Total Test time (real) =   1.35 sec
+Total Test time (real) =   2.87 sec

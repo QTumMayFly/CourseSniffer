@@ -1,15 +1,20 @@
 ********* Start testing of GuiTests *********
 Config: Using QtTest library 6.8.2, Qt 6.8.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 14.2.0), debian 13
 PASS   : GuiTests::initTestCase()
+PASS   : GuiTests::captureModePolicy()
+PASS   : GuiTests::captureModeWarningsRemainVisible()
 PASS   : GuiTests::queueCapacityAndDrain()
 PASS   : GuiTests::demoProtocolLabelsAndFilters()
+PASS   : GuiTests::dnsAndArpFiltersAndFields()
 QWARN  : GuiTests::controlsApplyFilterAndShowStream() This plugin does not support propagateSizeHints()
 PASS   : GuiTests::controlsApplyFilterAndShowStream()
 PASS   : GuiTests::unavailableInterfaceCompletesStop()
 SKIP   : GuiTests::idleLiveCaptureStop() 实时抓包检查通过 COURSESNIFFER_LIVE_TEST=1 启用。
-   Loc: [/workspace/scratch/6a4e2dd015f9/CourseSniffer/tests/test_gui.cpp(160)]
+   Loc: [/workspace/scratch/6a4e2dd015f9/CourseSniffer/tests/test_gui.cpp(291)]
+SKIP   : GuiTests::livePhysicalInterfaceMode() 物理接口捕获模式检查通过 COURSESNIFFER_LIVE_TEST=1 启用。
+   Loc: [/workspace/scratch/6a4e2dd015f9/CourseSniffer/tests/test_gui.cpp(338)]
 SKIP   : GuiTests::liveLoopbackTraffic() 本机通信抓包检查通过 COURSESNIFFER_LIVE_TEST=1 启用。
-   Loc: [/workspace/scratch/6a4e2dd015f9/CourseSniffer/tests/test_gui.cpp(202)]
+   Loc: [/workspace/scratch/6a4e2dd015f9/CourseSniffer/tests/test_gui.cpp(397)]
 PASS   : GuiTests::cleanupTestCase()
-Totals: 6 passed, 0 failed, 2 skipped, 0 blacklisted, 556ms
+Totals: 9 passed, 0 failed, 3 skipped, 0 blacklisted, 113ms
 ********* Finished testing of GuiTests *********
