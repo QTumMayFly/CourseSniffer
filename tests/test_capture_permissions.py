@@ -253,6 +253,7 @@ class CapturePermissionTests(unittest.TestCase):
             with self.subTest(leader_exits=leader_exits):
                 self.devices = FakeDevices()
                 children = []
+                group_exited = False
 
                 def spawn(command, **options):
                     child = subprocess.Popen(command, start_new_session=True, close_fds=True,
@@ -285,14 +286,18 @@ class CapturePermissionTests(unittest.TestCase):
                     readable, _, _ = select.select([children[0].stdout], [], [], 1)
                     self.assertTrue(readable, "会话结束后受控后代仍然持有管道")
                     self.assertEqual(os.read(children[0].stdout.fileno(), 1), b"")
+                    group_exited = True
                 finally:
                     for child in children:
                         try:
-                            os.killpg(child.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                        child.wait(timeout=2)
-                        child.stdout.close()
+                            if not group_exited:
+                                try:
+                                    os.killpg(child.pid, signal.SIGKILL)
+                                except ProcessLookupError:
+                                    pass
+                            child.wait(timeout=2)
+                        finally:
+                            child.stdout.close()
 
 
 if __name__ == "__main__":

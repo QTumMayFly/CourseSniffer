@@ -276,12 +276,12 @@ void MainWindow::populateInterfaces() {
 
 bool MainWindow::captureBusy() const { return state_ != State::Idle; }
 
-bool MainWindow::startCaptureOnInterface(const QString& interfaceName) {
+bool MainWindow::startCaptureOnInterface(const QString& interfaceName, const QString& captureFilter) {
     if (captureBusy() || model_->rowCount() != 0) return false;
     const int index = interfaces_->findData(interfaceName);
     if (index < 0) return false;
     interfaces_->setCurrentIndex(index);
-    startCapture();
+    startCaptureWithFilter(captureFilter);
     return captureBusy();
 }
 
@@ -315,6 +315,10 @@ void MainWindow::resetSession() {
 }
 
 void MainWindow::startCapture() {
+    startCaptureWithFilter({});
+}
+
+void MainWindow::startCaptureWithFilter(const QString& captureFilter) {
     if (captureBusy() || interfaces_->currentIndex() < 0) return;
     if (model_->rowCount() > 0) {
         QMessageBox confirmation(QMessageBox::Information, QStringLiteral("开始新会话"),
@@ -328,7 +332,7 @@ void MainWindow::startCapture() {
     state_ = State::Starting; workerFinished_ = false;
     sessionDescription_->setText(QStringLiteral("正在打开网络接口 %1。 ").arg(interfaces_->currentData().toString()));
     updateControls();
-    emit requestStart(interfaces_->currentData().toString());
+    emit requestStart(interfaces_->currentData().toString(), captureFilter);
 }
 
 void MainWindow::stopCapture() {

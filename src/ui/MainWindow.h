@@ -31,12 +31,12 @@ public:
     PacketTableModel* packetModel() const { return model_; }
     PacketFilterModel* proxyModel() const { return proxy_; }
     bool captureBusy() const;
-    bool startCaptureOnInterface(const QString& interfaceName);
+    bool startCaptureOnInterface(const QString& interfaceName, const QString& captureFilter = {});
     void requestCaptureStop();
     CaptureSummary lastCaptureSummary() const { return lastSummary_; }
     bool captureHasError() const { return captureError_ || lastSummary_.error; }
 signals:
-    void requestStart(const QString& interfaceName);
+    void requestStart(const QString& interfaceName, const QString& captureFilter);
     void requestStop();
     void sessionStarted(const QString& interfaceName, int linkType);
     void sessionFinished(const sniffer::CaptureSummary& summary);
@@ -60,6 +60,7 @@ private:
     void populateInterfaces();
     void processPackets(std::vector<RawPacket> packets);
     void resetSession();
+    void startCaptureWithFilter(const QString& captureFilter);
     void updateControls();
     void updateCounts();
     void finishSession();

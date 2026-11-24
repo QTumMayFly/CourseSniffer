@@ -1,5 +1,5 @@
 #!/bin/bash
-# CourseSniffer 实验 1A：本机真实抓包 + 自动 GUI 演示 + 连续窗口录制 + 中文字幕。
+# CourseSniffer 实验 1A：物理网卡与回环抓包、界面操作和字幕录制。
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
@@ -27,7 +27,7 @@ for formula in qtbase cmake ninja ffmpeg; do
         brew install "$formula"
     fi
 done
-if ! ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'libx264'; then
+if ! ffmpeg -hide_banner -encoders 2>/dev/null | grep -E '[[:space:]]libx264[[:space:]]' >/dev/null; then
     echo "当前 ffmpeg 不支持 H.264 编码器 libx264。请安装 Homebrew 的 ffmpeg。" >&2
     exit 2
 fi
@@ -45,12 +45,29 @@ fi
 OUT_DIR="$PROJECT_DIR/recordings"
 mkdir -p "$OUT_DIR"
 MOVIE="$OUT_DIR/仲泓宇_202618013229068_ex1A_play.mp4"
-export COURSESNIFFER_PYTHON="$(command -v python3)"
-export COURSESNIFFER_FFMPEG="$(command -v ffmpeg)"
-export COURSESNIFFER_RECORDING=1
+PYTHON="$(command -v python3)"
+FFMPEG="$(command -v ffmpeg)"
+ROUTE="$(/sbin/route -n get default)"
+INTERFACE="$(awk '/interface:/{print $2; exit}' <<< "$ROUTE")"
+GATEWAY="$(awk '/gateway:/{print $2; exit}' <<< "$ROUTE")"
+if ! [[ "$INTERFACE" =~ ^en[0-9]+$ ]]; then
+    echo "默认 IPv4 路由需要经过活动的 Wi-Fi 或以太网接口，当前接口：$INTERFACE。" >&2
+    exit 2
+fi
+SOURCE="$(/usr/sbin/ipconfig getifaddr "$INTERFACE")"
+"$PYTHON" - "$SOURCE" "$GATEWAY" <<'PY'
+from ipaddress import IPv4Address
+import sys
+source, gateway = map(IPv4Address, sys.argv[1:])
+if source == gateway or source.is_loopback or gateway.is_loopback:
+    raise SystemExit("物理接口的本机地址和网关地址必须有效且不同。")
+PY
 printf '\n录制真实 CourseSniffer 操作，输出文件：\n%s\n' "$MOVIE"
-echo "即将申请本机 BPF 抓包临时权限。录制中请保持桌面会话正常运行。"
-python3 "$PROJECT_DIR/scripts/capture_permissions_macos.py" --timeout 240 -- \
+echo "即将申请 BPF 抓包临时权限，演示接口为 $INTERFACE 和 lo0。"
+"$PYTHON" "$PROJECT_DIR/scripts/capture_permissions_macos.py" --timeout 300 -- \
+    /usr/bin/env "COURSESNIFFER_PYTHON=$PYTHON" "COURSESNIFFER_FFMPEG=$FFMPEG" \
+    "COURSESNIFFER_RECORD_INTERFACE=$INTERFACE" "COURSESNIFFER_RECORD_SOURCE=$SOURCE" \
+    "COURSESNIFFER_RECORD_GATEWAY=$GATEWAY" \
     "$APP" --record-demo "$MOVIE" \
     --demo-script "$PROJECT_DIR/demo/run_demo.py" \
     --sample-pcap "$PROJECT_DIR/demo/protocol_examples.pcap"
@@ -64,6 +81,11 @@ if not movie.is_file() or movie.stat().st_size < 100_000 or not record['passed']
     raise SystemExit('视频结果检查失败，请查看 recordings 目录中的日志。')
 if not movie.with_suffix('.srt').is_file():
     raise SystemExit('未生成字幕文件。')
+physical = record.get('physical_capture', {})
+if not physical.get('promiscuous_requested') or not physical.get('capture_activated'):
+    raise SystemExit('物理网卡混杂模式的演示记录不完整。')
+if not physical.get('echo_requests'):
+    raise SystemExit('物理网卡演示缺少本机发出的网关探测报文。')
 print('\n真实操作视频录制完成。')
 print('MP4:', movie)
 print('字幕:', movie.with_suffix('.srt'))

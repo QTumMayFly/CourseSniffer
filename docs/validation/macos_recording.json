@@ -1,0 +1,57 @@
+{
+  "application_version": "1.1.0",
+  "capture_activated": true,
+  "capture_filter": "(host 127.0.0.1 or host ::1) and (tcp port 8080 or udp port 9999 or icmp or icmp6)",
+  "capture_interface": "lo0",
+  "failures": [],
+  "live_packets": 96,
+  "live_protocol_counts": {
+    "http": 18,
+    "icmp": 6,
+    "icmp6": 4,
+    "ipv4": 50,
+    "ipv6": 46,
+    "tcp": 74,
+    "udp": 12
+  },
+  "live_source": "live-libpcap",
+  "offline_sample": "demo/protocol_examples.pcap",
+  "offline_sample_packets": 6,
+  "passed": true,
+  "physical_capture": {
+    "activation_result": 0,
+    "api_results": [
+      "pcap_set_snaplen(65535) 返回 0：调用成功",
+      "pcap_set_promisc(1) 返回 0：调用成功",
+      "pcap_set_timeout(100) 返回 0：调用成功",
+      "pcap_activate() 返回 0：调用成功",
+      "pcap_setnonblock(1) 返回 0：调用成功"
+    ],
+    "capture_activated": true,
+    "echo_replies": 3,
+    "echo_requests": 3,
+    "final_promiscuous_request": true,
+    "interface": "en0",
+    "ordinary_fallback": false,
+    "ping_exit_code": 0,
+    "promiscuous_requested": true,
+    "warnings": [],
+    "capture_scope": "本机与默认网关之间的 IPv4 ICMP 回显请求和应答"
+  },
+  "platform": "macOS Tahoe (26.6.2)",
+  "recorded_at_utc": "2026-11-24T02:29:28Z",
+  "tcp_stream_id": 1,
+  "traffic_script_passed": true,
+  "video_fps": 8,
+  "video_frames": 1330,
+  "video_height": 1000,
+  "video_width": 1440,
+  "movie_sha256": "c3eb0a61b898a6ac8357a210389b46ff33f982ed8ba4202b1ec23d97298d53cf",
+  "ctest": {
+    "test_groups_passed": 4,
+    "core_cases_passed": 107,
+    "python_cases_passed": 17,
+    "qt_passed": 9,
+    "qt_live_tests_skipped_by_default": 3
+  }
+}

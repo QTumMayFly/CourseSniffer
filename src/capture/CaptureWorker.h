@@ -77,7 +77,7 @@ public:
     ~CaptureWorker() override;
     static QList<NetworkInterface> enumerate(QString* error = nullptr);
 public slots:
-    void startCapture(const QString& interfaceName);
+    void startCapture(const QString& interfaceName, const QString& captureFilter = QString());
     void stopCapture();
 signals:
     void captureStarted(const QString& interfaceName, int linkType);

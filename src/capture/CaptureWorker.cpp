@@ -93,7 +93,7 @@ QList<NetworkInterface> CaptureWorker::enumerate(QString* error) {
     return result;
 }
 
-void CaptureWorker::startCapture(const QString& interfaceName) {
+void CaptureWorker::startCapture(const QString& interfaceName, const QString& captureFilter) {
     Q_ASSERT(QThread::currentThread() == thread());
     if (active_ || handle_) return;
     interfaceName_ = interfaceName;
@@ -124,6 +124,19 @@ void CaptureWorker::startCapture(const QString& interfaceName) {
     if (linkType_ < 0) {
         fail(QStringLiteral("读取链路类型"), QString::fromLocal8Bit(pcap_geterr(handle_)));
         return;
+    }
+    if (!captureFilter.isEmpty()) {
+        bpf_program program{};
+        if (pcap_compile(handle_, &program, captureFilter.toUtf8().constData(), 1, PCAP_NETMASK_UNKNOWN) < 0) {
+            fail(QStringLiteral("编译抓包过滤条件"), QString::fromLocal8Bit(pcap_geterr(handle_)));
+            return;
+        }
+        const int result = pcap_setfilter(handle_, &program);
+        pcap_freecode(&program);
+        if (result < 0) {
+            fail(QStringLiteral("设置抓包过滤条件"), QString::fromLocal8Bit(pcap_geterr(handle_)));
+            return;
+        }
     }
     const int nonblocking = pcap_setnonblock(handle_, 1, error);
     recordApiResult(QStringLiteral("pcap_setnonblock(1)"), nonblocking, QString::fromLocal8Bit(error));
