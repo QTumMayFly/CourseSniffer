@@ -113,7 +113,6 @@ def main():
         print(f"验证记录：{results / 'verification.json'}")
     if record["overall_passed"]:
         print("Mac 构建、实际捕获和普通用户界面验证全部通过。")
-        print("报告追加本机结果：python3 scripts/render_report.py --validation local-validation/verification.json")
     return 0 if record["overall_passed"] else 1
 
 
